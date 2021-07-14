@@ -8,6 +8,7 @@ license = "Apache-2.0"
 
 [dependencies]
 hashbrown = "0.9"
+fallible = { path = "../../common/fallible" }
 serde = { version = "1", default-features = false, package = "alt_serde", features = ["derive"] }
 petgraph = { git = "https://github.com/pontem-network/petgraph.git", default-features = false, features = ["graphmap", "stable_graph", "matrix_graph"]}
 hex = { version = "0.4.2", default-features = false, features = ["alloc"] }

@@ -3,24 +3,22 @@
 
 use crate::{
     file_format::{
-        Bytecode, CodeOffset, CodeUnit, ConstantPoolIndex, FieldHandle, FieldHandleIndex,
-        FieldInstantiation, FieldInstantiationIndex, FunctionDefinition, FunctionHandle,
-        FunctionHandleIndex, FunctionInstantiation, FunctionInstantiationIndex, IdentifierIndex,
-        Kind, LocalIndex, ModuleHandleIndex, Signature, SignatureIndex, SignatureToken,
+        AbilitySet, Bytecode, CodeOffset, CodeUnit, ConstantPoolIndex, FieldHandle,
+        FieldHandleIndex, FieldInstantiation, FieldInstantiationIndex, FunctionDefinition,
+        FunctionHandle, FunctionHandleIndex, FunctionInstantiation, FunctionInstantiationIndex,
+        IdentifierIndex, LocalIndex, ModuleHandleIndex, Signature, SignatureIndex, SignatureToken,
         StructDefInstantiation, StructDefInstantiationIndex, StructDefinition,
-        StructDefinitionIndex, StructHandle, TableIndex,
+        StructDefinitionIndex, StructHandle, TableIndex, Visibility,
     },
-    proptest_types::signature::{KindGen, SignatureGen, SignatureTokenGen},
+    proptest_types::signature::{AbilitySetGen, SignatureGen, SignatureTokenGen},
 };
-use mirai_annotations::*;
+use alloc::collections::BTreeSet;
+use core::hash::Hash;
+use hashbrown::{HashMap, HashSet};
 use proptest::{
     collection::{vec, SizeRange},
     prelude::*,
     sample::{select, Index as PropIndex},
-};
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    hash::Hash,
 };
 
 #[derive(Debug, Default)]
@@ -159,14 +157,14 @@ pub struct FunctionHandleGen {
     name: PropIndex,
     parameters: SignatureGen,
     return_: SignatureGen,
-    type_parameters: Vec<KindGen>,
+    type_parameters: Vec<AbilitySetGen>,
 }
 
 impl FunctionHandleGen {
     pub fn strategy(
         param_count: impl Into<SizeRange>,
         return_count: impl Into<SizeRange>,
-        kind_count: impl Into<SizeRange>,
+        type_parameter_count: impl Into<SizeRange>,
     ) -> impl Strategy<Value = Self> {
         let return_count = return_count.into();
         let param_count = param_count.into();
@@ -175,7 +173,7 @@ impl FunctionHandleGen {
             any::<PropIndex>(),
             SignatureGen::strategy(param_count),
             SignatureGen::strategy(return_count),
-            vec(KindGen::strategy(), kind_count),
+            vec(AbilitySetGen::strategy(), type_parameter_count),
         )
             .prop_map(
                 |(module, name, parameters, return_, type_parameters)| Self {
@@ -207,7 +205,7 @@ impl FunctionHandleGen {
         let type_parameters = self
             .type_parameters
             .into_iter()
-            .map(|kind| kind.materialize())
+            .map(|abilities| abilities.materialize())
             .collect();
         Some(FunctionHandle {
             module: mod_idx,
@@ -292,25 +290,26 @@ impl<'a> FnDefnMaterializeState<'a> {
         FunctionHandleIndex((self.function_handles.len() - 1) as TableIndex)
     }
 
-    fn get_signature_from_type_params(&mut self, kinds: &[Kind]) -> Signature {
+    fn get_signature_from_type_params(&mut self, abilities: &[AbilitySet]) -> Signature {
         let mut type_params = vec![];
-        for kind in kinds {
-            match kind {
-                Kind::Copyable | Kind::All => type_params.push(SignatureToken::U64),
-                Kind::Resource => type_params.push(SignatureToken::Signer),
+        for abs in abilities {
+            assert!(!abs.has_key());
+            match (abs.has_copy(), abs.has_drop(), abs.has_store()) {
+                (false, true, false) => type_params.push(SignatureToken::Signer),
+                _ => type_params.push(SignatureToken::U64),
             }
         }
         Signature(type_params)
     }
 
-    fn add_signature_from_type_params(&mut self, kinds: &[Kind]) -> SignatureIndex {
-        let sig = self.get_signature_from_type_params(kinds);
+    fn add_signature_from_type_params(&mut self, abilities: &[AbilitySet]) -> SignatureIndex {
+        let sig = self.get_signature_from_type_params(abilities);
         self.signatures.add_signature(sig)
     }
 
     fn get_function_instantiation(&mut self, fh_idx: usize) -> FunctionInstantiationIndex {
-        let kinds = self.function_handles[fh_idx].type_parameters.clone();
-        let sig_idx = self.add_signature_from_type_params(&kinds);
+        let abilities = self.function_handles[fh_idx].type_parameters.clone();
+        let sig_idx = self.add_signature_from_type_params(&abilities);
         let fi = FunctionInstantiation {
             handle: FunctionHandleIndex(fh_idx as TableIndex),
             type_parameters: sig_idx,
@@ -320,10 +319,10 @@ impl<'a> FnDefnMaterializeState<'a> {
 
     fn get_type_instantiation(&mut self, sd_idx: usize) -> StructDefInstantiationIndex {
         let sd = &self.struct_defs[sd_idx];
-        let kinds = self.struct_handles[sd.struct_handle.0 as usize]
+        let type_parameters = self.struct_handles[sd.struct_handle.0 as usize]
             .type_parameters
             .clone();
-        let sig_idx = self.add_signature_from_type_params(&kinds);
+        let sig_idx = self.add_signature_from_type_params(&type_parameters);
         let si = StructDefInstantiation {
             def: StructDefinitionIndex(sd_idx as TableIndex),
             type_parameters: sig_idx,
@@ -337,7 +336,7 @@ pub struct FunctionDefinitionGen {
     name: PropIndex,
     parameters: SignatureGen,
     return_: SignatureGen,
-    is_public: bool,
+    visibility: Visibility,
     acquires: Vec<PropIndex>,
     code: CodeUnitGen,
 }
@@ -346,7 +345,7 @@ impl FunctionDefinitionGen {
     pub fn strategy(
         return_count: impl Into<SizeRange>,
         arg_count: impl Into<SizeRange>,
-        _kind_count: impl Into<SizeRange>,
+        _type_parameter_count: impl Into<SizeRange>,
         acquires_count: impl Into<SizeRange>,
         code_len: impl Into<SizeRange>,
     ) -> impl Strategy<Value = Self> {
@@ -356,16 +355,16 @@ impl FunctionDefinitionGen {
             any::<PropIndex>(),
             SignatureGen::strategy(arg_count.clone()),
             SignatureGen::strategy(return_count),
-            any::<bool>(),
+            any::<Visibility>(),
             vec(any::<PropIndex>(), acquires_count.into()),
             CodeUnitGen::strategy(arg_count, code_len),
         )
             .prop_map(
-                |(name, parameters, return_, is_public, acquires, code)| Self {
+                |(name, parameters, return_, visibility, acquires, code)| Self {
                     name,
                     parameters,
                     return_,
-                    is_public,
+                    visibility,
                     acquires,
                     code,
                 },
@@ -408,7 +407,7 @@ impl FunctionDefinitionGen {
         // TODO: consider generating native functions?
         Some(FunctionDefinition {
             function: function_handle,
-            is_public: self.is_public,
+            visibility: self.visibility,
             acquires_global_resources,
             code: Some(self.code.materialize(state)),
         })
@@ -544,13 +543,13 @@ impl BytecodeGen {
                     field: field.index(*field_count) as TableIndex,
                 });
 
-                let kinds = &state.struct_handles
+                let type_parameters = &state.struct_handles
                     [state.struct_defs[sd_idx].struct_handle.0 as usize]
                     .type_parameters;
-                if kinds.is_empty() {
+                if type_parameters.is_empty() {
                     Bytecode::MutBorrowField(fh_idx)
                 } else {
-                    let sig_idx = state.add_signature_from_type_params(&kinds.clone());
+                    let sig_idx = state.add_signature_from_type_params(&type_parameters.clone());
                     let fi_idx = state
                         .field_instantiations
                         .add_instantiation(FieldInstantiation {
@@ -571,13 +570,13 @@ impl BytecodeGen {
                     field: field.index(*field_count) as TableIndex,
                 });
 
-                let kinds = &state.struct_handles
+                let type_parameters = &state.struct_handles
                     [state.struct_defs[sd_idx].struct_handle.0 as usize]
                     .type_parameters;
-                if kinds.is_empty() {
+                if type_parameters.is_empty() {
                     Bytecode::ImmBorrowField(fh_idx)
                 } else {
-                    let sig_idx = state.add_signature_from_type_params(&kinds.clone());
+                    let sig_idx = state.add_signature_from_type_params(&type_parameters.clone());
                     let fi_idx = state
                         .field_instantiations
                         .add_instantiation(FieldInstantiation {

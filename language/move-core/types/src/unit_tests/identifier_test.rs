@@ -3,7 +3,7 @@
 
 use crate::identifier::{IdentStr, Identifier, ALLOWED_IDENTIFIERS};
 use bcs::test_helpers::assert_canonical_encode_decode;
-use once_cell::sync::Lazy;
+use cell::Lazy;
 use proptest::prelude::*;
 use regex::Regex;
 use std::borrow::Borrow;

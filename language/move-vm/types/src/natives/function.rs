@@ -18,16 +18,16 @@
 
 use crate::{gas_schedule::NativeCostIndex, loaded_data::runtime_types::Type, values::Value};
 use move_core_types::{
-    gas_schedule::{AbstractMemorySize, CostTable, GasAlgebra, GasCarrier, GasUnits},
+    gas_schedule::{AbstractMemorySize, CostTable, GasAlgebra, GasCarrier, InternalGasUnits},
     value::MoveTypeLayout,
 };
+use smallvec::SmallVec;
 use vm::errors::PartialVMResult;
 
-use crate::natives::balance::{Balance, BalanceOperation, WalletId};
 use alloc::string::String;
 use alloc::vec::Vec;
-use move_core_types::account_address::AccountAddress;
 use move_core_types::language_storage::{ModuleId, TypeTag};
+
 pub use move_core_types::vm_status::StatusCode;
 pub use vm::errors::PartialVMError;
 
@@ -45,23 +45,17 @@ pub trait NativeContext {
     /// Saves contract event. Returns true if successful
     fn save_event(
         &mut self,
-        address: AccountAddress,
+        guid: Vec<u8>,
+        count: u64,
         ty: Type,
         val: Value,
-        caller: Option<ModuleId>,
     ) -> PartialVMResult<bool>;
     /// Get the a data layout via the type.
     fn type_to_type_layout(&self, ty: &Type) -> PartialVMResult<Option<MoveTypeLayout>>;
     /// Get the a data tag via the type.
     fn type_to_type_tag(&self, ty: &Type) -> PartialVMResult<TypeTag>;
-    /// Whether a type is a resource or not.
-    fn is_resource(&self, ty: &Type) -> bool;
     /// Caller module.
     fn caller(&self) -> Option<&ModuleId>;
-    /// Get user Balance.
-    fn get_balance(&self, wallet_id: &WalletId) -> Option<Balance>;
-    /// Save balance operation.
-    fn save_balance_operation(&mut self, wallet_id: WalletId, balance_op: BalanceOperation);
 }
 
 /// Result of a native function execution requires charges for execution cost.
@@ -75,14 +69,14 @@ pub trait NativeContext {
 /// must be expressed in a `NativeResult` with a cost and a VMStatus.
 pub struct NativeResult {
     /// The cost for running that function, whether successfully or not.
-    pub cost: GasUnits<GasCarrier>,
+    pub cost: InternalGasUnits<GasCarrier>,
     /// Result of execution. This is either the return values or the error to report.
-    pub result: Result<Vec<Value>, u64>,
+    pub result: Result<SmallVec<[Value; 1]>, u64>,
 }
 
 impl NativeResult {
     /// Return values of a successful execution.
-    pub fn ok(cost: GasUnits<GasCarrier>, values: Vec<Value>) -> Self {
+    pub fn ok(cost: InternalGasUnits<GasCarrier>, values: SmallVec<[Value; 1]>) -> Self {
         NativeResult {
             cost,
             result: Ok(values),
@@ -93,7 +87,7 @@ impl NativeResult {
     /// failure of the VM which would raise a `PartialVMError` error directly.
     /// The only thing the funciton can specify is its abort code, as if it had invoked the `Abort`
     /// bytecode instruction
-    pub fn err(cost: GasUnits<GasCarrier>, abort_code: u64) -> Self {
+    pub fn err(cost: InternalGasUnits<GasCarrier>, abort_code: u64) -> Self {
         NativeResult {
             cost,
             result: Err(abort_code),
@@ -103,7 +97,11 @@ impl NativeResult {
 
 /// Return the native gas entry in `CostTable` for the given key.
 /// The key is the specific native function index known to `CostTable`.
-pub fn native_gas(table: &CostTable, key: NativeCostIndex, size: usize) -> GasUnits<GasCarrier> {
+pub fn native_gas(
+    table: &CostTable,
+    key: NativeCostIndex,
+    size: usize,
+) -> InternalGasUnits<GasCarrier> {
     let gas_amt = table.native_cost(key as u8);
     let memory_size = AbstractMemorySize::new(core::cmp::max(1, size) as GasCarrier);
     debug_assert!(memory_size.get() > 0);

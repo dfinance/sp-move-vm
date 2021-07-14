@@ -12,20 +12,20 @@ edition = "2018"
 [dependencies]
 hashbrown = "0.9"
 anyhow = { version = "1.0.34", default-features = false }
-once_cell = { version = "1.5.2", default-features = false, features = ["unstable", "alloc"] }
+cell = { path = "../../common/cell", default-features = false}
 mirai-annotations = { path = "../../mirai-annotations", default-features = false }
 ref-cast = "1.0.3"
 diem-crypto = { path = "../../crypto/crypto", default-features = false }
 move-core-types = { path = "../move-core/types", default-features = false }
 num-variants = { path = "../../common/num-variants", default-features = false }
-proptest = { version = "0.10.1", optional = true }
-proptest-derive = { version = "0.2.0", optional = true }
+proptest = { version = "1.0.0", optional = true }
+proptest-derive = { version = "0.3.0", optional = true }
 diem-proptest-helpers = { path = "../../common/proptest-helpers", version = "0.1.0", optional = true }
 serde = { version = "1.0.117", default-features = false, package = "alt_serde", features = ["derive", "alloc"] }
 
 [dev-dependencies]
-proptest = "0.10.1"
-proptest-derive = "0.2.0"
+proptest = "1.0.0"
+proptest-derive = "0.3.0"
 diem-proptest-helpers = { path = "../../common/proptest-helpers", version = "0.1.0" }
 move-core-types = { path = "../move-core/types", version = "0.1.0", features = ["fuzzing"] }
 serde_json = { version = "1.0.61", package = "alt_serde_json" }
@@ -38,5 +38,6 @@ std = [
     "move-core-types/std",
     "diem-crypto/std",
     "num-variants/std",
+    "cell/std",
 ]
 

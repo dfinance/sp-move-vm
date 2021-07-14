@@ -25,11 +25,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        rust:
+          - "stable"
+        dove:
+          - "1.2.1"
+          - "1.2.2"
         os:
           - macos-latest
           - ubuntu-latest
-        rust:
-          - "stable"
 
     steps:
       - name: Checkout
@@ -45,6 +48,12 @@ jobs:
 
       - name: Code-style
         run: cargo fmt -- --check
+
+      - name: Dove executable
+        uses: pontem-network/get-dove@main
+        with:
+          version: ${{ matrix.dove }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tests
         run: cargo test --all --tests --no-fail-fast -- --test-threads=4 --nocapture
@@ -63,11 +72,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        rust:
+          - nightly-2021-04-24
+        dove:
+          - "1.2.1"
+          - "1.2.2"
         os:
           - macos-latest
           - ubuntu-latest
-        rust:
-          - "nightly-2020-10-05"
 
     steps:
       - name: Checkout
@@ -80,6 +92,12 @@ jobs:
           profile: minimal
           override: true
           target: wasm32-unknown-unknown
+
+      - name: Dove executable
+        uses: pontem-network/get-dove@main
+        with:
+          version: ${{ matrix.dove }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build WASM -std
         run: |

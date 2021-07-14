@@ -1,10 +1,10 @@
 [package]
 name = "short-hex-str"
 version = "0.1.0"
-authors = ["Libra Association <opensource@libra.org>"]
-description = "Libra implementation for retries of operations"
-repository = "https://github.com/libra/libra"
-homepage = "https://libra.org"
+authors = ["Diem Association <opensource@diem.com>"]
+description = "Diem implementation for retries of operations"
+repository = "https://github.com/diem/diem"
+homepage = "https://diem.com"
 license = "Apache-2.0"
 publish = false
 edition = "2018"
@@ -14,11 +14,10 @@ mirai-annotations = { path = "../../mirai-annotations" }
 serde = { version = "1.0.117", default-features = false, package = "alt_serde", features = ["derive"] }
 
 [dev-dependencies]
-proptest = "0.10"
+proptest = "1.0.0"
 hex = "0.4.2"
 
 [features]
 default = ["std"]
 std = [
-	"serde/std",
 ]

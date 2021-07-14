@@ -1,41 +1,40 @@
 [package]
 name = "diem-crypto"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Diem Association <opensource@diem.com>"]
 description = "Diem diem-crypto"
 repository = "https://github.com/diem/diem"
 homepage = "https://diem.com"
 license = "Apache-2.0"
-publish = false
+publish = ["crates-io"]
 edition = "2018"
 
 [dependencies]
-anyhow = { version = "1.0.34", default-features = false }
-bytes = { version = "0.5.6", default-features = false }
+anyhow = { version = "1.0.38", default-features = false }
+bytes = { version = "1.0.1", default-features = false }
 serde = { version = "1.0.117", default-features = false, package = "alt_serde", features = ["derive"] }
 static_assertions = "1.1.0"
 mirai-annotations = { path = "../../mirai-annotations", default-features = false }
 diem-nibble = { path = "../../common/nibble", default-features = false, version = "0.1.0" }
 hex = { version = "0.4.2", default-features = false, features = ["alloc"] }
 cell = { path = "../../common/cell", version = "0.1.0", default-features = false }
-short-hex-str = { path = "../../common/short-hex-str", default-features = false, version = "0.1.0" }
 tiny-keccak = { version = "2.0.2", features = ["sha3"] }
 rand = { version = "0.7.3", default-features = false, optional = true }
 rand_core = { version = "0.5.1", default-features = false, optional = true }
 serde_bytes = { version = "0.11.5", default-features = false, optional = true }
 bcs = { path = "../../bcs", default-features = false }
-proptest = { version = "0.10.1", optional = true }
+proptest = { version = "1.0.0", optional = true }
 proptest-derive = { version = "0.2.0", optional = true }
-diem-crypto-derive = { path = "../crypto-derive", version = "0.1.0", default-features = false, optional = true }
+diem-crypto-derive = { path = "../crypto-derive", default-features = false, optional = true }
 ed25519-dalek = { version = "1.0.0-pre.4", features = ["u64_backend", "alloc"], default-features = false }
 
 [dev-dependencies]
 bitvec = "0.19.4"
-byteorder = "1.3.4"
-proptest = "0.10.1"
-proptest-derive = "0.2.0"
+byteorder = "=1.3.4"
+proptest = "1.0.0"
+proptest-derive = "0.3.0"
 ripemd160 = "0.9.1"
-criterion = "0.3.3"
+criterion = "0.3.4"
 sha3 = "0.9.1"
 serde_json = "1.0.60"
 trybuild = "1.0.35"
@@ -51,12 +50,10 @@ std = [
     "bytes/std",
     "diem-nibble/std",
     "hex/std",
-    "short-hex-str/std",
     "bcs/std",
     "rand/std",
     "rand_core/std",
     "serde_bytes/std",
     "diem-crypto-derive/std",
-    "short-hex-str/std",
     "cell/std",
 ]

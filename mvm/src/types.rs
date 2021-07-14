@@ -1,17 +1,22 @@
 use alloc::vec::Vec;
-use anyhow::*;
 use core::convert::TryFrom;
 use core::fmt;
+
+use anyhow::*;
+use parity_scale_codec_derive::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+
 use move_core_types::account_address::AccountAddress;
 use move_core_types::identifier::Identifier;
 use move_core_types::language_storage::{StructTag, TypeTag};
+use move_core_types::value::MoveValue;
 use move_core_types::vm_status::StatusCode;
-use move_lang::parser::ast::{ModuleAccess_, ModuleIdent_, Type, Type_};
+use move_lang::parser::ast::{ModuleAccess_, Type, Type_};
 use move_lang::parser::lexer::{Lexer, Tok};
 use move_lang::parser::syntax::parse_type;
-use move_vm_types::values::Value;
-use parity_scale_codec::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+
+use crate::error::SubStatus;
+use vm::errors::Location;
 
 const GAS_AMOUNT_MAX_VALUE: u64 = u64::MAX / 1000;
 
@@ -37,6 +42,14 @@ impl Gas {
             max_gas_amount,
             gas_unit_price,
         })
+    }
+
+    /// Create infinite gas.
+    pub fn infinite() -> Gas {
+        Gas {
+            max_gas_amount: GAS_AMOUNT_MAX_VALUE,
+            gas_unit_price: 1,
+        }
     }
 
     /// Returns max gas units to be used in transaction execution.
@@ -86,7 +99,7 @@ impl fmt::Debug for ModuleTx {
 /// Script bytecode + passed arguments and type parameters.
 pub struct ScriptTx {
     code: Vec<u8>,
-    args: Vec<Value>,
+    args: Vec<Vec<u8>>,
     type_args: Vec<TypeTag>,
     senders: Vec<AccountAddress>,
 }
@@ -99,13 +112,19 @@ impl ScriptTx {
         args: Vec<ScriptArg>,
         type_args: Vec<TypeTag>,
         senders: Vec<AccountAddress>,
-    ) -> Self {
-        ScriptTx {
+    ) -> Result<ScriptTx> {
+        let args = args
+            .into_iter()
+            .map(ScriptArg::into)
+            .map(|val: MoveValue| bcs::to_bytes(&val))
+            .collect::<Result<_, _>>()
+            .map_err(Error::msg)?;
+        Ok(ScriptTx {
             code,
-            args: args.into_iter().map(ScriptArg::into).collect(),
+            args,
             type_args,
             senders,
-        }
+        })
     }
 
     /// Script bytecode.
@@ -114,7 +133,7 @@ impl ScriptTx {
     }
 
     /// Parameters passed to the main function.
-    pub fn args(&self) -> &[Value] {
+    pub fn args(&self) -> &[Vec<u8>] {
         &self.args
     }
 
@@ -124,7 +143,7 @@ impl ScriptTx {
     }
 
     /// Convert into internal data.
-    pub fn into_inner(self) -> (Vec<u8>, Vec<Value>, Vec<TypeTag>, Vec<AccountAddress>) {
+    pub fn into_inner(self) -> (Vec<u8>, Vec<Vec<u8>>, Vec<TypeTag>, Vec<AccountAddress>) {
         (self.code, self.args, self.type_args, self.senders)
     }
 }
@@ -146,18 +165,26 @@ pub struct VmResult {
     /// Execution status code.
     pub status_code: StatusCode,
     /// Execution sub status code.
-    pub sub_status: Option<u64>,
+    pub sub_status: Option<SubStatus>,
     /// Gas used.
     pub gas_used: u64,
+    /// Error location
+    pub location: Option<Location>,
 }
 
 impl VmResult {
     /// Create new Vm result
-    pub(crate) fn new(status_code: StatusCode, sub_status: Option<u64>, gas_used: u64) -> VmResult {
+    pub(crate) fn new(
+        status_code: StatusCode,
+        sub_status: Option<u64>,
+        location: Option<Location>,
+        gas_used: u64,
+    ) -> VmResult {
         VmResult {
             status_code,
-            sub_status,
+            sub_status: sub_status.map(SubStatus::new),
             gas_used,
+            location,
         }
     }
 }
@@ -176,19 +203,27 @@ pub enum ScriptArg {
     VectorAddress(Vec<AccountAddress>),
 }
 
-impl From<ScriptArg> for Value {
+impl From<ScriptArg> for MoveValue {
     fn from(arg: ScriptArg) -> Self {
         match arg {
-            ScriptArg::U8(val) => Value::u8(val),
-            ScriptArg::U64(val) => Value::u64(val),
-            ScriptArg::U128(val) => Value::u128(val),
-            ScriptArg::Bool(val) => Value::bool(val),
-            ScriptArg::Address(val) => Value::address(val),
-            ScriptArg::VectorU8(val) => Value::vector_u8(val),
-            ScriptArg::VectorU64(val) => Value::vector_u64(val),
-            ScriptArg::VectorU128(val) => Value::vector_u128(val),
-            ScriptArg::VectorBool(val) => Value::vector_bool(val),
-            ScriptArg::VectorAddress(val) => Value::vector_address(val),
+            ScriptArg::U8(val) => MoveValue::U8(val),
+            ScriptArg::U64(val) => MoveValue::U64(val),
+            ScriptArg::U128(val) => MoveValue::U128(val),
+            ScriptArg::Bool(val) => MoveValue::Bool(val),
+            ScriptArg::Address(val) => MoveValue::Address(val),
+            ScriptArg::VectorU8(val) => MoveValue::vector_u8(val),
+            ScriptArg::VectorU64(val) => {
+                MoveValue::Vector(val.into_iter().map(MoveValue::U64).collect())
+            }
+            ScriptArg::VectorU128(val) => {
+                MoveValue::Vector(val.into_iter().map(MoveValue::U128).collect())
+            }
+            ScriptArg::VectorBool(val) => {
+                MoveValue::Vector(val.into_iter().map(MoveValue::Bool).collect())
+            }
+            ScriptArg::VectorAddress(val) => {
+                MoveValue::Vector(val.into_iter().map(MoveValue::Address).collect())
+            }
         }
     }
 }
@@ -255,11 +290,11 @@ fn unwrap_spanned_ty_(ty: Type, this: Option<AccountAddress>) -> Result<TypeTag,
 
                 // OxADDR.M.S
                 (ModuleAccess_::QualifiedModuleAccess(module_id, struct_name), _) => {
-                    let ModuleIdent_ { name, address } = module_id.0.value;
+                    let (address, name) = module_id.value;
                     let address = AccountAddress::new(address.to_u8());
                     TypeTag::Struct(StructTag {
                         address,
-                        module: Identifier::new(name.0.value)?,
+                        module: Identifier::new(name)?,
                         name: Identifier::new(struct_name.value)?,
                         type_params: ty_params
                             .into_iter()
@@ -286,7 +321,7 @@ fn unwrap_spanned_ty_(ty: Type, this: Option<AccountAddress>) -> Result<TypeTag,
 pub struct Transaction {
     signers_count: u8,
     code: Vec<u8>,
-    args: Vec<ScriptArg>,
+    args: Vec<Vec<u8>>,
     type_args: Vec<TypeTag>,
 }
 
@@ -296,7 +331,12 @@ impl Transaction {
             signers.len() == self.signers_count as usize,
             "Invalid signers count."
         );
-        Ok(ScriptTx::new(self.code, self.args, self.type_args, signers))
+        Ok(ScriptTx {
+            code: self.code,
+            args: self.args,
+            type_args: self.type_args,
+            senders: signers,
+        })
     }
 
     pub fn signers_count(&self) -> u8 {
@@ -312,7 +352,7 @@ impl TryFrom<&[u8]> for Transaction {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct ModulePackage {
     modules: Vec<Vec<u8>>,
 }

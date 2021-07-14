@@ -1,7 +1,7 @@
 use core::convert::TryFrom;
 use move_core_types::identifier::Identifier;
 use move_core_types::language_storage::{StructTag, TypeTag, CORE_CODE_ADDRESS};
-use move_vm_types::values::Value;
+use move_core_types::value::MoveValue;
 use mvm::types::{parse_type_params, ModulePackage, Transaction};
 use vm::access::ModuleAccess;
 use vm::file_format::CompiledScript;
@@ -64,12 +64,16 @@ fn test_parse_type_params() {
 
 #[test]
 fn test_parse_transaction() {
-    let tx = Transaction::try_from(&include_bytes!("assets/target/transactions/tx_test.mvt")[..])
-        .unwrap();
+    let tx =
+        Transaction::try_from(&include_bytes!("assets/artifacts/transactions/tx_test.mvt")[..])
+            .unwrap();
     assert_eq!(tx.signers_count(), 0);
     let script = tx.into_script(vec![]).unwrap();
     CompiledScript::deserialize(script.code()).unwrap();
-    assert_eq!(script.args(), &[Value::u64(100)][..]);
+    assert_eq!(
+        script.args(),
+        &[MoveValue::U64(100).simple_serialize().unwrap()][..]
+    );
     assert_eq!(
         script.type_parameters(),
         &[TypeTag::Struct(StructTag {
@@ -83,12 +87,16 @@ fn test_parse_transaction() {
 
 #[test]
 fn test_parse_mvt() {
-    let tx = Transaction::try_from(&include_bytes!("assets/target/transactions/store_u64.mvt")[..])
-        .unwrap();
+    let tx =
+        Transaction::try_from(&include_bytes!("assets/artifacts/transactions/store_u64.mvt")[..])
+            .unwrap();
     assert_eq!(tx.signers_count(), 1);
     let script = tx.into_script(vec![CORE_CODE_ADDRESS]).unwrap();
     CompiledScript::deserialize(script.code()).unwrap();
-    assert_eq!(script.args(), &[Value::u64(13)][..]);
+    assert_eq!(
+        script.args(),
+        &[MoveValue::U64(13).simple_serialize().unwrap()][..]
+    );
     assert_eq!(script.type_parameters(), &[][..])
 }
 
@@ -105,7 +113,8 @@ fn test_transaction_invalid_signer() {
 #[test]
 fn test_parse_pac() {
     let pac =
-        ModulePackage::try_from(&include_bytes!("assets/target/packages/stdlib.pac")[..]).unwrap();
+        ModulePackage::try_from(&include_bytes!("assets/artifacts/bundles/valid_pack.pac")[..])
+            .unwrap();
     let tx = pac.into_tx(CORE_CODE_ADDRESS);
     let (modules, address) = tx.into_inner();
 
@@ -117,16 +126,7 @@ fn test_parse_pac() {
         .map(|module| module.name().to_string())
         .collect::<Vec<_>>();
     assert_eq!(
-        modules,
-        vec![
-            "Block".to_owned(),
-            "Coins".to_owned(),
-            "PONT".to_owned(),
-            "Signer".to_owned(),
-            "Time".to_owned(),
-            "Event".to_owned(),
-            "Pontem".to_owned(),
-            "Account".to_owned(),
-        ]
+        modules.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+        vec!["Abort", "EventProxy", "Store", "Foo"]
     );
 }

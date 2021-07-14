@@ -30,12 +30,11 @@ serde = { version = "1.0.117", default-features = false, package = "alt_serde", 
 
 [dev-dependencies]
 criterion = "0.3.3"
-proptest = "0.10.1"
+proptest = "1.0.0"
 proptest-derive = "0.2.0"
 
 [features]
 default = ["std"]
 
 std = [
-    "serde/std",
 ]

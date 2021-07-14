@@ -4,17 +4,17 @@
 use crate::{
     access::ModuleAccess,
     file_format::{
-        CompiledModule, FieldDefinition, FunctionHandle, Kind, SignatureToken, StructDefinition,
-        StructFieldInformation, TypeParameterIndex,
+        AbilitySet, CompiledModule, FieldDefinition, FunctionDefinition, SignatureToken,
+        StructDefinition, StructFieldInformation, TypeParameterIndex, Visibility,
     },
 };
-use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use move_core_types::{
     account_address::AccountAddress,
     identifier::Identifier,
-    language_storage::{StructTag, TypeTag},
+    language_storage::{ModuleId, StructTag, TypeTag},
 };
 
 /// Defines normalized representations of Move types, fields, kinds, structs, functions, and
@@ -27,7 +27,7 @@ use move_core_types::{
 /// A normalized version of `SignatureToken`, a type expression appearing in struct or function
 /// declarations. Unlike `SignatureToken`s, `normalized::Type`s from different modules can safely be
 /// compared.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Type {
     Bool,
     U8,
@@ -61,20 +61,19 @@ pub struct Field {
 /// `ModuleId` or `Module`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Struct {
-    pub name: Identifier,
-    pub kind: Kind,
-    pub type_parameters: Vec<Kind>,
+    pub abilities: AbilitySet,
+    pub type_parameters: Vec<AbilitySet>,
     pub fields: Vec<Field>,
 }
 
 /// Normalized version of a `FunctionDefinition`. Not safe to compare without an associated
 /// `ModuleId` or `Module`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FunctionSignature {
-    pub name: Identifier,
-    pub type_parameters: Vec<Kind>,
-    pub formals: Vec<Type>,
-    pub ret: Vec<Type>,
+#[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Function {
+    pub visibility: Visibility,
+    pub type_parameters: Vec<AbilitySet>,
+    pub parameters: Vec<Type>,
+    pub return_: Vec<Type>,
 }
 
 /// Normalized version of a `CompiledModule`: its address, name, struct declarations, and public
@@ -83,8 +82,9 @@ pub struct FunctionSignature {
 pub struct Module {
     pub address: AccountAddress,
     pub name: Identifier,
-    pub structs: Vec<Struct>,
-    pub public_functions: Vec<FunctionSignature>,
+    pub friends: Vec<ModuleId>,
+    pub structs: BTreeMap<Identifier, Struct>,
+    pub exposed_functions: BTreeMap<Identifier, Function>,
 }
 
 impl Module {
@@ -92,24 +92,29 @@ impl Module {
     /// Nothing will break here if that is not the case, but there is little point in computing a
     /// normalized representation of a module that won't verify (since it can't be published).
     pub fn new(m: &CompiledModule) -> Self {
+        let friends = m.immediate_friends();
         let structs = m.struct_defs().iter().map(|d| Struct::new(m, d)).collect();
-        let public_functions = m
+        let exposed_functions = m
             .function_defs()
             .iter()
-            .filter_map(|f| {
-                if f.is_public {
-                    Some(FunctionSignature::new(m, m.function_handle_at(f.function)))
-                } else {
-                    None
-                }
+            .filter(|func_def| match func_def.visibility {
+                Visibility::Public | Visibility::Script | Visibility::Friend => true,
+                Visibility::Private => false,
             })
+            .map(|func_def| Function::new(m, func_def))
             .collect();
+
         Self {
             address: *m.address(),
             name: m.name().to_owned(),
+            friends,
             structs,
-            public_functions,
+            exposed_functions,
         }
+    }
+
+    pub fn module_id(&self) -> ModuleId {
+        ModuleId::new(self.address, self.name.clone())
     }
 }
 
@@ -119,21 +124,26 @@ impl Type {
         use SignatureToken::*;
         match s {
             Struct(shi) => {
-                let handle = m.struct_handle_at(*shi);
-                assert!(handle.type_parameters.is_empty(), "A struct with N type parameters should be encoded as StructModuleInstantiation with type_arguments = [TypeParameter(1), ..., TypeParameter(N)]");
+                let s_handle = m.struct_handle_at(*shi);
+                assert!(s_handle.type_parameters.is_empty(), "A struct with N type parameters should be encoded as StructModuleInstantiation with type_arguments = [TypeParameter(1), ..., TypeParameter(N)]");
+                let m_handle = m.module_handle_at(s_handle.module);
                 Type::Struct {
-                    address: *m.address(),
-                    module: m.name().to_owned(),
-                    name: m.identifier_at(handle.name).to_owned(),
+                    address: *m.address_identifier_at(m_handle.address),
+                    module: m.identifier_at(m_handle.name).to_owned(),
+                    name: m.identifier_at(s_handle.name).to_owned(),
                     type_arguments: Vec::new(),
                 }
             }
-            StructInstantiation(shi, type_actuals) => Type::Struct {
-                address: *m.address(),
-                module: m.name().to_owned(),
-                name: m.identifier_at(m.struct_handle_at(*shi).name).to_owned(),
-                type_arguments: type_actuals.iter().map(|t| Type::new(m, t)).collect(),
-            },
+            StructInstantiation(shi, type_actuals) => {
+                let s_handle = m.struct_handle_at(*shi);
+                let m_handle = m.module_handle_at(s_handle.module);
+                Type::Struct {
+                    address: *m.address_identifier_at(m_handle.address),
+                    module: m.identifier_at(m_handle.name).to_owned(),
+                    name: m.identifier_at(s_handle.name).to_owned(),
+                    type_arguments: type_actuals.iter().map(|t| Type::new(m, t)).collect(),
+                }
+            }
             Bool => Type::Bool,
             U8 => Type::U8,
             U64 => Type::U64,
@@ -217,7 +227,7 @@ impl Field {
 impl Struct {
     /// Create a `Struct` for `StructDefinition` `def` in module `m`. Panics if `def` is a
     /// a native struct definition.
-    pub fn new(m: &CompiledModule, def: &StructDefinition) -> Self {
+    pub fn new(m: &CompiledModule, def: &StructDefinition) -> (Identifier, Self) {
         let handle = m.struct_handle_at(def.struct_handle);
         let fields = match &def.field_information {
             StructFieldInformation::Native => panic!("Can't extract  for native struct"),
@@ -225,37 +235,37 @@ impl Struct {
                 fields.iter().map(|f| Field::new(m, f)).collect()
             }
         };
-        Struct {
-            name: m.identifier_at(handle.name).to_owned(),
-            kind: if handle.is_nominal_resource {
-                Kind::Resource
-            } else {
-                Kind::Copyable
-            },
+        let name = m.identifier_at(handle.name).to_owned();
+        let s = Struct {
+            abilities: handle.abilities,
             type_parameters: handle.type_parameters.clone(),
             fields,
-        }
+        };
+        (name, s)
     }
 }
 
-impl FunctionSignature {
+impl Function {
     /// Create a `FunctionSignature` for `FunctionHandle` `f` in module `m`.
-    pub fn new(m: &CompiledModule, f: &FunctionHandle) -> Self {
-        FunctionSignature {
-            name: m.identifier_at(f.name).to_owned(),
-            type_parameters: f.type_parameters.clone(),
-            formals: m
-                .signature_at(f.parameters)
+    pub fn new(m: &CompiledModule, def: &FunctionDefinition) -> (Identifier, Self) {
+        let fhandle = m.function_handle_at(def.function);
+        let name = m.identifier_at(fhandle.name).to_owned();
+        let f = Function {
+            visibility: def.visibility,
+            type_parameters: fhandle.type_parameters.clone(),
+            parameters: m
+                .signature_at(fhandle.parameters)
                 .0
                 .iter()
                 .map(|s| Type::new(m, s))
                 .collect(),
-            ret: m
-                .signature_at(f.return_)
+            return_: m
+                .signature_at(fhandle.return_)
                 .0
                 .iter()
                 .map(|s| Type::new(m, s))
                 .collect(),
-        }
+        };
+        (name, f)
     }
 }

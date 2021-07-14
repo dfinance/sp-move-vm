@@ -9,8 +9,7 @@ use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::{Display, Formatter};
-use diem_crypto_derive::{BCSCryptoHash, CryptoHasher};
-use parity_scale_codec::{Decode, Encode};
+use parity_scale_codec_derive::{Decode, Encode};
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
 use serde::{Deserialize, Serialize};
@@ -21,11 +20,6 @@ pub const RESOURCE_TAG: u8 = 1;
 pub const CORE_CODE_ADDRESS: AccountAddress = AccountAddress::new([
     0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
     0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8,
-]);
-
-pub const NONE_ADDRESS: AccountAddress = AccountAddress::new([
-    0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
-    0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
 ]);
 
 #[derive(
@@ -43,19 +37,7 @@ pub enum TypeTag {
 }
 
 #[derive(
-    Serialize,
-    Deserialize,
-    Debug,
-    PartialEq,
-    Hash,
-    Eq,
-    Clone,
-    PartialOrd,
-    Ord,
-    CryptoHasher,
-    BCSCryptoHash,
-    Encode,
-    Decode,
+    Serialize, Deserialize, Debug, PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Encode, Decode,
 )]
 pub struct StructTag {
     pub address: AccountAddress,
@@ -66,11 +48,8 @@ pub struct StructTag {
 }
 
 impl StructTag {
-    #[allow(clippy::vec_init_then_push)]
     pub fn access_vector(&self) -> Vec<u8> {
-        let mut key = vec![];
-        key.push(RESOURCE_TAG);
-
+        let mut key = vec![RESOURCE_TAG];
         key.append(&mut bcs::to_bytes(self).unwrap());
         key
     }
@@ -107,25 +86,13 @@ impl ResourceKey {
 /// Represents the initial key into global storage where we first index by the address, and then
 /// the struct tag
 #[derive(
-    Serialize,
-    Deserialize,
-    Debug,
-    PartialEq,
-    Hash,
-    Eq,
-    Clone,
-    PartialOrd,
-    Ord,
-    CryptoHasher,
-    BCSCryptoHash,
-    Encode,
-    Decode,
+    Serialize, Deserialize, Debug, PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Encode, Decode,
 )]
 #[cfg_attr(any(test, feature = "fuzzing"), derive(Arbitrary))]
 #[cfg_attr(any(test, feature = "fuzzing"), proptest(no_params))]
 pub struct ModuleId {
-    address: AccountAddress,
-    name: Identifier,
+    pub address: AccountAddress,
+    pub name: Identifier,
 }
 
 impl From<ModuleId> for (AccountAddress, Identifier) {
@@ -147,11 +114,8 @@ impl ModuleId {
         &self.address
     }
 
-    #[allow(clippy::vec_init_then_push)]
     pub fn access_vector(&self) -> Vec<u8> {
-        let mut key = vec![];
-        key.push(CODE_TAG);
-
+        let mut key = vec![CODE_TAG];
         key.append(&mut bcs::to_bytes(self).unwrap());
         key
     }

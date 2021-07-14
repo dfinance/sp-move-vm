@@ -9,11 +9,13 @@ use crate::{
     traits::*,
 };
 use alloc::vec::Vec;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use core::convert::TryFrom;
 use core::{cmp::Ordering, fmt};
 use mirai_annotations::*;
 use serde::Serialize;
+#[cfg(feature = "std")]
+use serde::Serializer;
 
 /// The length of the Ed25519PrivateKey
 pub const ED25519_PRIVATE_KEY_LENGTH: usize = ed25519_dalek::SECRET_KEY_LENGTH;
@@ -32,6 +34,16 @@ const L: [u8; 32] = [
 //#[derive(SilentDebug, SilentDisplay)]
 pub struct Ed25519PrivateKey(ed25519_dalek::SecretKey);
 
+#[cfg(feature = "std")]
+impl Serialize for Ed25519PrivateKey {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(self.0.as_bytes()))
+    }
+}
+
 #[cfg(feature = "assert-private-keys-not-cloneable")]
 static_assertions::assert_not_impl_any!(Ed25519PrivateKey: Clone);
 
@@ -46,6 +58,16 @@ impl Clone for Ed25519PrivateKey {
 /// An Ed25519 public key
 #[derive(Clone)]
 pub struct Ed25519PublicKey(ed25519_dalek::PublicKey);
+
+#[cfg(feature = "std")]
+impl Serialize for Ed25519PublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(self.0.as_bytes()))
+    }
+}
 
 #[cfg(mirai)]
 use crate::tags::ValidatedPublicKeyTag;
@@ -170,11 +192,9 @@ impl SigningKey for Ed25519PrivateKey {
 
     fn sign<T: CryptoHash + Serialize>(&self, message: &T) -> Ed25519Signature {
         let mut bytes = <T::Hasher as CryptoHasher>::seed().to_vec();
-        bytes.extend_from_slice(
-            &bcs::to_bytes(&message)
-                .map_err(|_| CryptoMaterialError::SerializationError)
-                .expect("Serialization of signable material should not fail."),
-        );
+        bcs::serialize_into(&mut bytes, &message)
+            .map_err(|_| CryptoMaterialError::SerializationError)
+            .expect("Serialization of signable material should not fail.");
         Ed25519PrivateKey::sign_arbitrary_message(&self, bytes.as_ref())
     }
 
@@ -343,10 +363,8 @@ impl Signature for Ed25519Signature {
         // Public keys should be validated to be safe against small subgroup attacks, etc.
         precondition!(has_tag!(public_key, ValidatedPublicKeyTag));
         let mut bytes = <T::Hasher as CryptoHasher>::seed().to_vec();
-        bytes.extend_from_slice(
-            &bcs::to_bytes(&message)
-                .map_err(|_| anyhow::Error::msg(CryptoMaterialError::SerializationError))?,
-        );
+        bcs::serialize_into(&mut bytes, &message)
+            .map_err(|_| Error::msg(CryptoMaterialError::SerializationError))?;
         Self::verify_arbitrary_msg(self, &bytes, public_key)
     }
 
@@ -356,7 +374,7 @@ impl Signature for Ed25519Signature {
     fn verify_arbitrary_msg(&self, message: &[u8], public_key: &Ed25519PublicKey) -> Result<()> {
         // Public keys should be validated to be safe against small subgroup attacks, etc.
         precondition!(has_tag!(public_key, ValidatedPublicKeyTag));
-        Ed25519Signature::check_malleability(&self.to_bytes()).map_err(anyhow::Error::msg)?;
+        Ed25519Signature::check_malleability(&self.to_bytes()).map_err(Error::msg)?;
 
         public_key
             .0
@@ -367,6 +385,35 @@ impl Signature for Ed25519Signature {
 
     fn to_bytes(&self) -> Vec<u8> {
         self.0.to_bytes().to_vec()
+    }
+
+    /// Batch signature verification as described in the original EdDSA article
+    /// by Bernstein et al. "High-speed high-security signatures". Current implementation works for
+    /// signatures on the same message and it checks for malleability.
+    #[cfg(feature = "batch")]
+    fn batch_verify<T: CryptoHash + Serialize>(
+        message: &T,
+        keys_and_signatures: Vec<(Self::VerifyingKeyMaterial, Self)>,
+    ) -> Result<()> {
+        for (_, sig) in keys_and_signatures.iter() {
+            Ed25519Signature::check_malleability(&sig.to_bytes())?
+        }
+        let mut message_bytes = <T::Hasher as CryptoHasher>::seed().to_vec();
+        bcs::serialize_into(&mut message_bytes, &message)
+            .map_err(|_| CryptoMaterialError::SerializationError)?;
+
+        let batch_argument = keys_and_signatures
+            .iter()
+            .map(|(key, signature)| (key.0, signature.0));
+        let (dalek_public_keys, dalek_signatures): (Vec<_>, Vec<_>) = batch_argument.unzip();
+        let message_ref = &(&message_bytes)[..];
+        // The original batching algorithm works for different messages and it expects as many
+        // messages as the number of signatures. In our case, we just populate the same
+        // message to meet dalek's api requirements.
+        let messages = vec![message_ref; dalek_signatures.len()];
+        ed25519_dalek::verify_batch(&messages[..], &dalek_signatures[..], &dalek_public_keys[..])
+            .map_err(|e| anyhow!("{}", e))?;
+        Ok(())
     }
 }
 
@@ -430,4 +477,28 @@ fn check_s_lt_l(s: &[u8]) -> bool {
     }
     // As this stage S == L which implies a non canonical S.
     false
+}
+
+#[cfg(any(test, feature = "fuzzing"))]
+use crate::test_utils::{self, KeyPair};
+
+/// Produces a uniformly random ed25519 keypair from a seed
+#[cfg(any(test, feature = "fuzzing"))]
+pub fn keypair_strategy() -> impl Strategy<Value = KeyPair<Ed25519PrivateKey, Ed25519PublicKey>> {
+    test_utils::uniform_keypair_strategy::<Ed25519PrivateKey, Ed25519PublicKey>()
+}
+
+#[cfg(any(test, feature = "fuzzing"))]
+use proptest::prelude::*;
+
+#[cfg(any(test, feature = "fuzzing"))]
+impl proptest::arbitrary::Arbitrary for Ed25519PublicKey {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        crate::test_utils::uniform_keypair_strategy::<Ed25519PrivateKey, Ed25519PublicKey>()
+            .prop_map(|v| v.public_key)
+            .boxed()
+    }
 }

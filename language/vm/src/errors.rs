@@ -12,20 +12,19 @@ use move_core_types::{
     language_storage::ModuleId,
     vm_status::{self, StatusCode, StatusType, VMStatus},
 };
-use serde::{Deserialize, Serialize};
 
 pub type VMResult<T> = ::core::result::Result<T, VMError>;
 pub type BinaryLoaderResult<T> = ::core::result::Result<T, PartialVMError>;
 pub type PartialVMResult<T> = ::core::result::Result<T, PartialVMError>;
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Location {
     Undefined,
     Script,
     Module(ModuleId),
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct VMError {
     major_status: StatusCode,
     sub_status: Option<u64>,
@@ -64,21 +63,11 @@ impl VMError {
                 );
                 VMStatus::Error(StatusCode::ABORTED)
             }
-            (StatusCode::OUT_OF_GAS, _, _) => VMStatus::Error(StatusCode::OUT_OF_GAS),
-            (major_status, sub_status, location)
+
+            // TODO Errors for OUT_OF_GAS do not always have index set
+            (major_status, _sub_status, location)
                 if major_status.status_type() == StatusType::Execution =>
             {
-                debug_assert!(
-                    offsets.len() == 1,
-                    "Unexpected offsets. major_status: {:?}\
-                    sub_status: {:?}\
-                    location: {:?}\
-                    offsets: {:#?}",
-                    major_status,
-                    sub_status,
-                    location,
-                    offsets
-                );
                 let abort_location = match location {
                     Location::Script => vm_status::AbortLocation::Script,
                     Location::Module(id) => vm_status::AbortLocation::Module(id),
@@ -356,10 +345,9 @@ impl fmt::Display for VMError {
 ////////////////////////////////////////////////////////////////////////////
 /// Conversion functions from internal VM statuses into external VM statuses
 ////////////////////////////////////////////////////////////////////////////
-#[allow(clippy::from_over_into)]
-impl Into<VMStatus> for VMError {
-    fn into(self) -> VMStatus {
-        self.into_vm_status()
+impl From<VMError> for VMStatus {
+    fn from(vm_error: VMError) -> VMStatus {
+        vm_error.into_vm_status()
     }
 }
 

@@ -9,6 +9,7 @@ use move_vm_types::{
     natives::function::{native_gas, NativeContext, NativeResult},
     values::{values_impl::Struct, Value},
 };
+use smallvec::smallvec;
 use uint::construct_uint;
 use vm::errors::{PartialVMError, PartialVMResult};
 
@@ -26,7 +27,7 @@ pub fn from_u8(
 
     let u256 = U256::from(pop_arg!(arguments, u8));
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_FROM_U8, 0);
-    Ok(NativeResult::ok(cost, vec![wrap_u256(u256)]))
+    Ok(NativeResult::ok(cost, smallvec![wrap_u256(u256)]))
 }
 
 pub fn from_u64(
@@ -39,7 +40,7 @@ pub fn from_u64(
 
     let u256 = U256::from(pop_arg!(arguments, u64));
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_FROM_U64, 0);
-    Ok(NativeResult::ok(cost, vec![wrap_u256(u256)]))
+    Ok(NativeResult::ok(cost, smallvec![wrap_u256(u256)]))
 }
 
 pub fn from_u128(
@@ -51,7 +52,7 @@ pub fn from_u128(
     debug_assert!(arguments.len() == 1);
     let u256 = U256::from(pop_arg!(arguments, u128));
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_FROM_U128, 0);
-    Ok(NativeResult::ok(cost, vec![wrap_u256(u256)]))
+    Ok(NativeResult::ok(cost, smallvec![wrap_u256(u256)]))
 }
 
 pub fn as_u8(
@@ -71,7 +72,7 @@ pub fn as_u8(
     }?;
 
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_AS_U8, 0);
-    Ok(NativeResult::ok(cost, vec![Value::u8(value)]))
+    Ok(NativeResult::ok(cost, smallvec![Value::u8(value)]))
 }
 
 pub fn as_u64(
@@ -91,7 +92,7 @@ pub fn as_u64(
     }?;
 
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_AS_U64, 0);
-    Ok(NativeResult::ok(cost, vec![Value::u64(value)]))
+    Ok(NativeResult::ok(cost, smallvec![Value::u64(value)]))
 }
 
 pub fn as_u128(
@@ -112,7 +113,7 @@ pub fn as_u128(
     }?;
 
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_AS_U128, 0);
-    Ok(NativeResult::ok(cost, vec![Value::u128(value)]))
+    Ok(NativeResult::ok(cost, smallvec![Value::u128(value)]))
 }
 
 pub fn mul(
@@ -133,7 +134,7 @@ pub fn mul(
     }
 
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_MUL, 0);
-    Ok(NativeResult::ok(cost, vec![wrap_u256(res)]))
+    Ok(NativeResult::ok(cost, smallvec![wrap_u256(res)]))
 }
 
 pub fn div(
@@ -154,7 +155,7 @@ pub fn div(
 
     let res = l.div(r);
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_DIV, 0);
-    Ok(NativeResult::ok(cost, vec![wrap_u256(res)]))
+    Ok(NativeResult::ok(cost, smallvec![wrap_u256(res)]))
 }
 
 pub fn sub(
@@ -175,7 +176,7 @@ pub fn sub(
     }
 
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_SUB, 0);
-    Ok(NativeResult::ok(cost, vec![wrap_u256(res)]))
+    Ok(NativeResult::ok(cost, smallvec![wrap_u256(res)]))
 }
 
 pub fn add(
@@ -196,7 +197,7 @@ pub fn add(
     }
 
     let cost = native_gas(context.cost_table(), NativeCostIndex::U256_ADD, 0);
-    Ok(NativeResult::ok(cost, vec![wrap_u256(res)]))
+    Ok(NativeResult::ok(cost, smallvec![wrap_u256(res)]))
 }
 
 pub fn unwrap_u256(u256: Struct) -> PartialVMResult<U256> {
@@ -222,5 +223,5 @@ pub fn unwrap_u256(u256: Struct) -> PartialVMResult<U256> {
 fn wrap_u256(val: U256) -> Value {
     let mut bytes = vec![0; 32];
     val.to_little_endian(&mut bytes);
-    Value::struct_(Struct::pack(vec![Value::vector_u8(bytes)], false))
+    Value::struct_(Struct::pack(vec![Value::vector_u8(bytes)]))
 }

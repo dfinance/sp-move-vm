@@ -1,4 +1,4 @@
-// Copyright (c) The Libra Core Contributors
+// Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 //! This module provides a generic set of traits for dealing with cryptographic primitives.
@@ -72,7 +72,7 @@ pub trait Length {
 /// round-trip to bytes and corresponding [`TryFrom`][TryFrom].
 pub trait ValidCryptoMaterial:
 // The for<'a> exactly matches the assumption "deserializable from any lifetime".
-    for<'a> TryFrom<&'a [u8], Error=CryptoMaterialError>
+    for<'a> TryFrom<&'a [u8], Error = CryptoMaterialError>
 {
     /// Convert the valid crypto material to bytes.
     fn to_bytes(&self) -> Vec<u8>;
@@ -170,7 +170,7 @@ pub trait PublicKey: Sized + Clone + Eq + Hash +
     for<'a> From<&'a <Self as PublicKey>::PrivateKeyMaterial> {
     /// We require public / private types to be coupled, i.e. their
     /// associated type is each other.
-    type PrivateKeyMaterial: PrivateKey<PublicKeyMaterial=Self>;
+    type PrivateKeyMaterial: PrivateKey<PublicKeyMaterial = Self>;
 }
 
 /// A type family of public keys that are used for signing.

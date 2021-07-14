@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[macro_use]
 extern crate mirai_annotations;
 #[macro_use]
 extern crate alloc;
@@ -12,6 +13,7 @@ use core::fmt;
 
 pub mod access;
 pub mod check_bounds;
+pub mod compatibility;
 #[macro_use]
 pub mod errors;
 pub mod constant;
@@ -30,15 +32,15 @@ pub mod views;
 mod unit_tests;
 
 pub use file_format::CompiledModule;
-use serde::{Deserialize, Serialize};
 
 /// Represents a kind of index -- useful for error messages.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IndexKind {
     ModuleHandle,
     StructHandle,
     FunctionHandle,
     FieldHandle,
+    FriendDeclaration,
     FunctionInstantiation,
     FieldInstantiation,
     StructDefinition,
@@ -65,6 +67,7 @@ impl IndexKind {
             StructHandle,
             FunctionHandle,
             FieldHandle,
+            FriendDeclaration,
             StructDefInstantiation,
             FunctionInstantiation,
             FieldInstantiation,
@@ -91,6 +94,7 @@ impl fmt::Display for IndexKind {
             StructHandle => "struct handle",
             FunctionHandle => "function handle",
             FieldHandle => "field handle",
+            FriendDeclaration => "friend declaration",
             StructDefInstantiation => "struct instantiation",
             FunctionInstantiation => "function instantiation",
             FieldInstantiation => "field instantiation",

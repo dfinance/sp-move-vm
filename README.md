@@ -1,5 +1,5 @@
 # Move VM
-This is modified version of [Libra Move VM](https://github.com/libra/libra).
+This is modified version of [Diem Move VM](https://github.com/diem/diem).
 ## Differences
 - `no_std` compatible
 - `wasm32` target compatible

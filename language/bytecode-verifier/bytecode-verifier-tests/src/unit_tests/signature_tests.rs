@@ -3,8 +3,7 @@
 
 use bytecode_verifier::{verify_module, SignatureChecker};
 use invalid_mutations::signature::{FieldRefMutation, SignatureRefMutation};
-use move_core_types::account_address::AccountAddress;
-use move_core_types::identifier::Identifier;
+use move_core_types::{account_address::AccountAddress, identifier::Identifier};
 use proptest::{collection::vec, prelude::*, sample::Index as PropIndex};
 use vm::file_format::{Bytecode::*, CompiledModule, SignatureToken::*, *};
 
@@ -58,6 +57,7 @@ proptest! {
 #[test]
 fn no_verify_locals_good() {
     let compiled_module_good = CompiledModuleMut {
+        version: vm::file_format_common::VERSION_MAX,
         module_handles: vec![ModuleHandle {
             address: AddressIdentifierIndex(0),
             name: IdentifierIndex(0),
@@ -86,6 +86,7 @@ fn no_verify_locals_good() {
             },
         ],
         field_handles: vec![],
+        friend_decls: vec![],
         struct_def_instantiations: vec![],
         function_instantiations: vec![],
         field_instantiations: vec![],
@@ -100,7 +101,7 @@ fn no_verify_locals_good() {
         function_defs: vec![
             FunctionDefinition {
                 function: FunctionHandleIndex(0),
-                is_public: true,
+                visibility: Visibility::Public,
                 acquires_global_resources: vec![],
                 code: Some(CodeUnit {
                     locals: SignatureIndex(0),
@@ -109,7 +110,7 @@ fn no_verify_locals_good() {
             },
             FunctionDefinition {
                 function: FunctionHandleIndex(1),
-                is_public: true,
+                visibility: Visibility::Public,
                 acquires_global_resources: vec![],
                 code: Some(CodeUnit {
                     locals: SignatureIndex(1),

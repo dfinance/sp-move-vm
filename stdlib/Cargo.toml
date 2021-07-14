@@ -1,0 +1,9 @@
+[package]
+name = "stdlib"
+version = "0.1.0"
+authors = [
+    "Dm. Yakushev <dmitryyakushev@dfinance.co>",
+]
+edition = "2018"
+
+[dependencies]

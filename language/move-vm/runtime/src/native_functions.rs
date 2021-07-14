@@ -1,17 +1,17 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::{interpreter::Interpreter, loader::Resolver, logging::LogContext};
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
-
-use move_core_types::language_storage::{ModuleId, TypeTag};
+use move_core_types::language_storage::ModuleId;
+use move_core_types::language_storage::TypeTag;
 use move_core_types::{
     account_address::AccountAddress, gas_schedule::CostTable, language_storage::CORE_CODE_ADDRESS,
     value::MoveTypeLayout, vm_status::StatusType,
 };
 use move_vm_natives::{account, bcs, debug, event, hash, signature, signer, u256, vector};
-use move_vm_types::natives::balance::{Balance, BalanceOperation, WalletId};
 use move_vm_types::{
     data_store::DataStore,
     gas_schedule::CostStrategy,
@@ -20,8 +20,6 @@ use move_vm_types::{
     values::Value,
 };
 use vm::errors::PartialVMResult;
-
-use crate::{interpreter::Interpreter, loader::Resolver, logging::LogContext};
 
 // The set of native functions the VM supports.
 // The functions can line in any crate linked in but the VM declares them here.
@@ -50,8 +48,6 @@ pub(crate) enum NativeFunction {
     SignerBorrowAddress,
     CreateSigner,
     DestroySigner,
-    DfinanceCreateSigner,
-    DfinanceDestroySigner,
 
     U256FromU8,
     U256FromU64,
@@ -63,10 +59,6 @@ pub(crate) enum NativeFunction {
     U256Div,
     U256Sub,
     U256Add,
-
-    WithdrawToNative,
-    DepositFromNative,
-    GetNativeBalance,
 }
 
 impl NativeFunction {
@@ -92,14 +84,14 @@ impl NativeFunction {
             (&CORE_CODE_ADDRESS, "Vector", "pop_back") => VectorPopBack,
             (&CORE_CODE_ADDRESS, "Vector", "destroy_empty") => VectorDestroyEmpty,
             (&CORE_CODE_ADDRESS, "Vector", "swap") => VectorSwap,
-            (&CORE_CODE_ADDRESS, "Event", "emit") => AccountWriteEvent,
+            (&CORE_CODE_ADDRESS, "Event", "write_to_event_store") => AccountWriteEvent,
+            (&CORE_CODE_ADDRESS, "DiemAccount", "create_signer") => CreateSigner,
+            (&CORE_CODE_ADDRESS, "DiemAccount", "destroy_signer") => DestroySigner,
             (&CORE_CODE_ADDRESS, "Account", "create_signer") => CreateSigner,
             (&CORE_CODE_ADDRESS, "Account", "destroy_signer") => DestroySigner,
             (&CORE_CODE_ADDRESS, "Debug", "print") => DebugPrint,
             (&CORE_CODE_ADDRESS, "Debug", "print_stack_trace") => DebugPrintStackTrace,
             (&CORE_CODE_ADDRESS, "Signer", "borrow_address") => SignerBorrowAddress,
-            (&CORE_CODE_ADDRESS, "Pontem", "create_signer") => DfinanceCreateSigner,
-            (&CORE_CODE_ADDRESS, "Pontem", "destroy_signer") => DfinanceDestroySigner,
 
             (&CORE_CODE_ADDRESS, "U256", "from_u8") => U256FromU8,
             (&CORE_CODE_ADDRESS, "U256", "from_u64") => U256FromU64,
@@ -112,10 +104,6 @@ impl NativeFunction {
             (&CORE_CODE_ADDRESS, "U256", "div") => U256Div,
             (&CORE_CODE_ADDRESS, "U256", "sub") => U256Sub,
             (&CORE_CODE_ADDRESS, "U256", "add") => U256Add,
-
-            (&CORE_CODE_ADDRESS, "Account", "deposit_native") => DepositFromNative,
-            (&CORE_CODE_ADDRESS, "Account", "withdraw_native") => WithdrawToNative,
-            (&CORE_CODE_ADDRESS, "Account", "get_native_balance") => GetNativeBalance,
             _ => return None,
         })
     }
@@ -148,8 +136,7 @@ impl NativeFunction {
             Self::SignerBorrowAddress => signer::native_borrow_address(ctx, t, v),
             Self::CreateSigner => account::native_create_signer(ctx, t, v),
             Self::DestroySigner => account::native_destroy_signer(ctx, t, v),
-            Self::DfinanceCreateSigner => account::native_create_signer(ctx, t, v),
-            Self::DfinanceDestroySigner => account::native_destroy_signer(ctx, t, v),
+
             // u256
             Self::U256FromU8 => u256::from_u8(ctx, t, v),
             Self::U256FromU64 => u256::from_u64(ctx, t, v),
@@ -163,9 +150,6 @@ impl NativeFunction {
             Self::U256Div => u256::div(ctx, t, v),
             Self::U256Sub => u256::sub(ctx, t, v),
             Self::U256Add => u256::add(ctx, t, v),
-            Self::WithdrawToNative => account::native_withdraw(ctx, t, v),
-            Self::DepositFromNative => account::native_deposit(ctx, t, v),
-            Self::GetNativeBalance => account::get_balance(ctx, t, v),
         };
         result
     }
@@ -209,16 +193,20 @@ impl<'a, L: LogContext> NativeContext for FunctionContext<'a, L> {
 
     fn save_event(
         &mut self,
-        address: AccountAddress,
+        guid: Vec<u8>,
+        seq_num: u64,
         ty: Type,
         val: Value,
-        caller: Option<ModuleId>,
     ) -> PartialVMResult<bool> {
-        match self.data_store.emit_event(address, ty, val, caller) {
+        match self.data_store.emit_event(guid, seq_num, ty, val) {
             Ok(()) => Ok(true),
             Err(e) if e.major_status().status_type() == StatusType::InvariantViolation => Err(e),
             Err(_) => Ok(false),
         }
+    }
+
+    fn type_to_type_tag(&self, ty: &Type) -> PartialVMResult<TypeTag> {
+        self.resolver.type_to_type_tag(ty)
     }
 
     fn type_to_type_layout(&self, ty: &Type) -> PartialVMResult<Option<MoveTypeLayout>> {
@@ -229,24 +217,7 @@ impl<'a, L: LogContext> NativeContext for FunctionContext<'a, L> {
         }
     }
 
-    fn type_to_type_tag(&self, ty: &Type) -> PartialVMResult<TypeTag> {
-        self.resolver.loader().type_to_type_tag(ty)
-    }
-
-    fn is_resource(&self, ty: &Type) -> bool {
-        self.resolver.is_resource(ty)
-    }
-
     fn caller(&self) -> Option<&ModuleId> {
         self.caller
-    }
-
-    fn get_balance(&self, wallet_id: &WalletId) -> Option<Balance> {
-        self.data_store.get_balance(wallet_id)
-    }
-
-    fn save_balance_operation(&mut self, wallet_id: WalletId, balance_op: BalanceOperation) {
-        self.data_store
-            .save_balance_operation(wallet_id, balance_op);
     }
 }

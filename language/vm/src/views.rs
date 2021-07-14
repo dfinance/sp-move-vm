@@ -14,9 +14,8 @@
 use core::iter::DoubleEndedIterator;
 
 use crate::{access::ModuleAccess, file_format::*, SignatureTokenKind};
-use alloc::collections::btree_set::BTreeSet;
-
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use move_core_types::{identifier::IdentStr, language_storage::ModuleId};
 
@@ -216,11 +215,11 @@ impl<'a, T: ModuleAccess> StructHandleView<'a, T> {
         &self.struct_handle
     }
 
-    pub fn is_nominal_resource(&self) -> bool {
-        self.struct_handle.is_nominal_resource
+    pub fn abilities(&self) -> AbilitySet {
+        self.struct_handle.abilities
     }
 
-    pub fn type_parameters(&self) -> &Vec<Kind> {
+    pub fn type_parameters(&self) -> &Vec<AbilitySet> {
         &self.struct_handle.type_parameters
     }
 
@@ -306,7 +305,7 @@ impl<'a, T: ModuleAccess> FunctionHandleView<'a, T> {
     }
 
     #[inline]
-    pub fn type_parameters(&self) -> &Vec<Kind> {
+    pub fn type_parameters(&self) -> &Vec<AbilitySet> {
         &self.function_handle.type_parameters
     }
 
@@ -346,8 +345,8 @@ impl<'a, T: ModuleAccess> StructDefinitionView<'a, T> {
         }
     }
 
-    pub fn is_nominal_resource(&self) -> bool {
-        self.struct_handle_view.is_nominal_resource()
+    pub fn abilities(&self) -> AbilitySet {
+        self.struct_handle_view.abilities()
     }
 
     pub fn is_native(&self) -> bool {
@@ -357,7 +356,7 @@ impl<'a, T: ModuleAccess> StructDefinitionView<'a, T> {
         }
     }
 
-    pub fn type_parameters(&self) -> &Vec<Kind> {
+    pub fn type_parameters(&self) -> &Vec<AbilitySet> {
         self.struct_handle_view.type_parameters()
     }
 
@@ -477,8 +476,8 @@ impl<'a, T: ModuleAccess> FunctionDefinitionView<'a, T> {
         }
     }
 
-    pub fn is_public(&self) -> bool {
-        self.function_def.is_public()
+    pub fn visibility(&self) -> Visibility {
+        self.function_def.visibility
     }
 
     pub fn is_native(&self) -> bool {
@@ -501,7 +500,7 @@ impl<'a, T: ModuleAccess> FunctionDefinitionView<'a, T> {
         self.function_handle_view.return_()
     }
 
-    pub fn type_parameters(&self) -> &Vec<Kind> {
+    pub fn type_parameters(&self) -> &Vec<AbilitySet> {
         self.function_handle_view.type_parameters()
     }
 

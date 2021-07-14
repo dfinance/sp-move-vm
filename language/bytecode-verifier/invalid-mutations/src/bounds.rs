@@ -59,6 +59,7 @@ impl PointerKind {
             ],
             StructDefinition => &[One(StructHandle), Star(StructHandle)],
             FunctionDefinition => &[One(FunctionHandle), One(Signature)],
+            FriendDeclaration => &[One(AddressIdentifier), One(Identifier)],
             Signature => &[Star(StructHandle)],
             FieldHandle => &[One(StructDefinition)],
             _ => &[],
@@ -80,6 +81,7 @@ pub static VALID_POINTER_SRCS: &[IndexKind] = &[
     IndexKind::FieldHandle,
     IndexKind::StructDefinition,
     IndexKind::FunctionDefinition,
+    IndexKind::FriendDeclaration,
     IndexKind::Signature,
 ];
 
@@ -223,7 +225,7 @@ impl ApplyOutOfBoundsContext {
         mutations
             .iter()
             .zip(to_mutate)
-            .filter_map(move |(mutation, src_idx)| {
+            .map(move |(mutation, src_idx)| {
                 self.set_index(
                     src_kind,
                     src_idx,
@@ -241,7 +243,6 @@ impl ApplyOutOfBoundsContext {
     /// this will set self.module_handles[src_idx].address to new_idx.
     ///
     /// This is mainly used for test generation.
-    #[allow(clippy::unnecessary_wraps)]
     fn set_index(
         &mut self,
         src_kind: IndexKind,
@@ -249,7 +250,7 @@ impl ApplyOutOfBoundsContext {
         dst_kind: IndexKind,
         dst_count: usize,
         new_idx: TableIndex,
-    ) -> Option<PartialVMError> {
+    ) -> PartialVMError {
         use IndexKind::*;
 
         // These are default values, but some of the match arms below mutate them.
@@ -310,16 +311,20 @@ impl ApplyOutOfBoundsContext {
             (FieldHandle, StructDefinition) => {
                 self.module.field_handles[src_idx].owner = StructDefinitionIndex(new_idx)
             }
+            (FriendDeclaration, AddressIdentifier) => {
+                self.module.friend_decls[src_idx].address = AddressIdentifierIndex(new_idx)
+            }
+            (FriendDeclaration, Identifier) => {
+                self.module.friend_decls[src_idx].name = IdentifierIndex(new_idx)
+            }
             _ => panic!("Invalid pointer kind: {:?} -> {:?}", src_kind, dst_kind),
         }
 
-        Some(err.at_index(src_kind, src_idx as TableIndex))
+        err.at_index(src_kind, src_idx as TableIndex)
     }
 
     /// Returns the indexes of locals signatures that contain struct handles inside them.
-    fn sig_structs(
-        module: &'_ CompiledModule,
-    ) -> impl Iterator<Item = (SignatureIndex, usize)> + '_ {
+    fn sig_structs(module: &CompiledModule) -> impl Iterator<Item = (SignatureIndex, usize)> + '_ {
         let module_view = ModuleView::new(module);
         module_view
             .signatures()

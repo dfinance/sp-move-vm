@@ -9,6 +9,7 @@ use move_vm_types::{
     natives::function::{native_gas, NativeContext, NativeResult},
     values::{values_impl::SignerRef, Value},
 };
+use smallvec::smallvec;
 use vm::errors::PartialVMResult;
 
 pub fn native_borrow_address(
@@ -24,6 +25,6 @@ pub fn native_borrow_address(
 
     Ok(NativeResult::ok(
         cost,
-        vec![signer_reference.borrow_signer()?],
+        smallvec![signer_reference.borrow_signer()?],
     ))
 }

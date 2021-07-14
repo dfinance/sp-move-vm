@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use move_core_types::{identifier::Identifier, language_storage::ModuleId, vm_status::StatusCode};
 use vm::{
     errors::{PartialVMError, PartialVMResult},
-    file_format::{Kind, StructDefinitionIndex},
+    file_format::{AbilitySet, StructDefinitionIndex},
 };
 
 pub const TYPE_DEPTH_MAX: usize = 256;
@@ -14,8 +14,8 @@ pub const TYPE_DEPTH_MAX: usize = 256;
 #[derive(Debug, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StructType {
     pub fields: Vec<Type>,
-    pub is_resource: bool,
-    pub type_parameters: Vec<Kind>,
+    pub abilities: AbilitySet,
+    pub type_parameters: Vec<AbilitySet>,
     pub name: Identifier,
     pub module: ModuleId,
     pub struct_def: StructDefinitionIndex,

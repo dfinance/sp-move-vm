@@ -1,3 +1,5 @@
 /target
 .idea
 .cargo
+/stdlib/move-stdlib
+/mvm/tests/assets/artifacts

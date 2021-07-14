@@ -1,5 +1,6 @@
-use anyhow::{Error, Result};
 use core::cmp;
+
+use anyhow::{Error, Result};
 
 pub struct Cursor<T>
 where
@@ -19,6 +20,10 @@ where
 
     pub fn position(&self) -> u64 {
         self.pos
+    }
+
+    pub fn set_position(&mut self, pos: u64) {
+        self.pos = pos;
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
@@ -56,5 +61,9 @@ where
     fn fill_buf(&mut self) -> &[u8] {
         let amt = cmp::min(self.pos, self.inner.as_ref().len() as u64);
         &self.inner.as_ref()[(amt as usize)..]
+    }
+
+    pub fn get_ref(&self) -> &T {
+        &self.inner
     }
 }

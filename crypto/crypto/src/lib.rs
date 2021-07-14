@@ -1,4 +1,4 @@
-// Copyright (c) The Libra Core Contributors
+// Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #![forbid(unsafe_code)]
@@ -16,6 +16,7 @@ mod unit_tests;
 pub mod ed25519;
 pub mod hash;
 pub mod serde_name;
+#[cfg(test)]
 pub mod test_utils;
 pub mod traits;
 

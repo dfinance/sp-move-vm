@@ -15,7 +15,7 @@ use crate::{
     internals::ModuleIndex,
     IndexKind,
 };
-use alloc::format;
+use core::u8;
 use move_core_types::vm_status::StatusCode;
 
 pub struct BoundsChecker<'a> {
@@ -54,6 +54,9 @@ impl<'a> BoundsChecker<'a> {
         }
         for field_handle in &bounds_check.module.field_handles {
             bounds_check.check_field_handle(field_handle)?
+        }
+        for friend_decl in &bounds_check.module.friend_decls {
+            bounds_check.check_module_handle(friend_decl)?
         }
         for struct_instantiation in &bounds_check.module.struct_def_instantiations {
             bounds_check.check_struct_instantiation(struct_instantiation)?
